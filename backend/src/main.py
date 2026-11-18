@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from fastapi import FastAPI,Depends,HTTPException
 from fastapi.responses import JSONResponse
-from .db import Base,engine,db_session
+from .db import Base,engine,db_session,migrate
 from .models import User,PrintJob,ProofSheet,Adjustment,Audit
 from .auth import current,writers,admin,verify,token
 from .schemas import Login,JobInput,ProofInput,AdjustmentInput,InstructionInput,ReproofInput
@@ -20,6 +20,7 @@ r=redis.Redis.from_url(os.environ['REDIS_URL'],decode_responses=True)
 @asynccontextmanager
 async def lifespan(app):
     Base.metadata.create_all(engine)
+    migrate()
     if os.getenv('SEED_DEMO','true')=='true':
         try:
             from scripts.seed_demo import seed

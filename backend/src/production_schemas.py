@@ -17,6 +17,7 @@ class SampleInput(ProofInput):
     model_config=ConfigDict(allow_inf_nan=False)
     sequence:int=Field(ge=1,le=1000000)
     quantity:int=Field(ge=1,le=10000000)
+    request_id:str|None=Field(default=None,max_length=64)
 class HoldClose(Inputs):
     resolution:str=Field(min_length=5,max_length=500)
     @field_validator('resolution')

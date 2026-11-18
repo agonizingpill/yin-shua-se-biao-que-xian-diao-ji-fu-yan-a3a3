@@ -16,19 +16,25 @@ def queue(s,proof,r):
 def sample(s,p,u,r):
     job=s.scalar(select(PrintJob).where(PrintJob.id==p.job_id).with_for_update())
     if not job:raise HTTPException(404,'工单不存在')
+    if p.request_id:
+        dup=s.scalar(select(PressSample).where(PressSample.job_id==job.id,PressSample.request_id==p.request_id))
+        if dup:return dup
     if job.status!='production' or s.scalar(select(PressHold).where(PressHold.job_id==job.id,PressHold.state=='active')):raise HTTPException(409,'仅无停机单的量产工单可以抽检，须先复验并主管复机')
     plate=require_ready(s,job.id)
     from .inspection_service import ready
-    from .paper_service import sample_guard
-    ready(s,job.id);sample_guard(s,job.id,p.quantity)
+    from .paper_service import sample_guard,active_batch
+    ready(s,job.id)
+    batch=active_batch(s,job.id)
+    if not batch:raise HTTPException(409,'请先领纸建立领用批次，抽检须携带领用批次')
+    sample_guard(s,batch,p.quantity)
     if s.scalar(select(PressSample).where(PressSample.job_id==job.id,PressSample.state=='classifying')):raise HTTPException(409,'上一张量产抽检尚在判读，请等待结果')
     last=s.scalar(select(func.max(PressSample.sequence)).where(PressSample.job_id==job.id)) or 0
     if p.sequence<=last:raise HTTPException(409,'抽检序号须递增，不得重复或倒序')
     if s.scalar(select(ProofSheet).where(ProofSheet.code==p.code)):raise HTTPException(409,'量产抽检必须使用新的唯一色标编号')
-    values=p.model_dump();seq=values.pop('sequence');qty=values.pop('quantity')
+    values=p.model_dump(exclude={'request_id'});seq=values.pop('sequence');qty=values.pop('quantity')
     proof=ProofSheet(**values,classification_state='classifying');s.add(proof);s.flush()
-    item=PressSample(job_id=job.id,proof_id=proof.id,plate_id=plate.id,sequence=seq,quantity=qty,plate_snapshot={'version':plate.version,'registration_error_mm':plate.registration_error_mm,'source_note':plate.source_note,'approved_by':plate.approved_by});s.add(item)
-    audit(s,u,f'量产抽检 工单{job.code} 序{seq} 已印{qty}张 色标{proof.code}');queue(s,proof,r);return item
+    item=PressSample(job_id=job.id,proof_id=proof.id,plate_id=plate.id,batch_id=batch.id,sequence=seq,quantity=qty,request_id=p.request_id or None,batch_snapshot={'batch_no':batch.batch_no,'lot_id':batch.lot_id,'lot_code':batch.lot_code,'paper':batch.paper_snapshot},plate_snapshot={'version':plate.version,'registration_error_mm':plate.registration_error_mm,'source_note':plate.source_note,'approved_by':plate.approved_by});s.add(item)
+    audit(s,u,f'量产抽检 工单{job.code} 序{seq} 批次#{batch.batch_no} 批内已印{qty}张 色标{proof.code}');queue(s,proof,r);return item
 
 def finish(s,proof):
     item=s.scalar(select(PressSample).where(PressSample.proof_id==proof.id).with_for_update())

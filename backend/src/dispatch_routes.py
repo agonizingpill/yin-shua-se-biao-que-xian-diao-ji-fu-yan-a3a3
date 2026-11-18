@@ -3,11 +3,17 @@ from sqlalchemy import select
 from .db import db_session
 from .auth import current,writers,admin
 from .services import pack,audit
-from .dispatch_models import PaperLot,PaperIssue,PressMachine,PressInspection,PrintPack,PrintShipment,ShipmentPack
+from .dispatch_models import PaperLot,PaperIssue,PaperBatch,PressMachine,PressInspection,PrintPack,PrintShipment,ShipmentPack
 from .dispatch_schemas import PaperLotInput,PaperState,PaperIssueInput,PaperReturn,MachineInput,MachineState,InspectionInput,PackInput,ShipmentInput,ReceiptInput
 from .paper_service import locked
 from . import paper_service,inspection_service,shipment_service
 router=APIRouter()
+@router.get('/paper-batches')
+def batches(s=Depends(db_session),u=Depends(current)):
+    result=[]
+    for x in s.scalars(select(PaperBatch).order_by(PaperBatch.id.desc())):
+        row=pack(x);row['net_sheets']=paper_service.batch_net(s,x.id);row['printed_sheets']=paper_service.batch_printed(s,x);row['sealed_sheets']=paper_service.batch_sealed(s,x.id);result.append(row)
+    return result
 @router.get('/paper-lots')
 def lots(s=Depends(db_session),u=Depends(current)):return [pack(x) for x in s.scalars(select(PaperLot).order_by(PaperLot.id))]
 @router.post('/paper-lots')
